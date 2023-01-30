@@ -12,6 +12,7 @@ pub struct Url<'a> {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UrlScheme {
     /// HTTP scheme
     HTTP,

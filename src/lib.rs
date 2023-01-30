@@ -25,6 +25,18 @@ pub enum UrlScheme {
 }
 
 impl UrlScheme {
+    /// str representation of the scheme
+    /// 
+    /// The returned str is always lowercase
+    pub fn as_str(&self) -> &str {
+        match self {
+            UrlScheme::HTTP => "http",
+            UrlScheme::HTTPS => "https",
+            UrlScheme::MQTT => "mqtt",
+            UrlScheme::MQTTS => "mqtts",
+        }
+    }
+
     /// Get the default port for scheme
     pub const fn default_port(&self) -> u16 {
         match self {

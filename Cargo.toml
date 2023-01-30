@@ -1,0 +1,10 @@
+[package]
+name = "tiny-url"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/rmja/tinyurl"
+authors = ["Rasmus Melchior Jacobsen <rmja@laesoe.org>"]
+license = "Apache-2.0 or MIT"
+keywords = ["embedded", "url", "no_std"]
+
+[dependencies]

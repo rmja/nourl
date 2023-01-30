@@ -1,7 +1,7 @@
 #![no_std]
-mod error;
 #[cfg(feature = "defmt")]
 mod defmt_impl;
+mod error;
 
 pub use error::Error;
 

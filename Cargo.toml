@@ -1,6 +1,6 @@
 [package]
 name = "nourl"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A simple Url primitive for no_std environments"
 readme = "README.md"

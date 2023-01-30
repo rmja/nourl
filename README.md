@@ -1,5 +1,5 @@
 # A simple Url primitive
-[![crates.io](https://img.shields.io/crates/v/tinyurl.svg)](https://crates.io/crates/tinyurl)
+[![crates.io](https://img.shields.io/crates/v/nourl.svg)](https://crates.io/crates/nourl)
 
 This crate provides a simple `Url` type that can be used in embedded `no_std` environments.
 

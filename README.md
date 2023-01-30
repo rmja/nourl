@@ -1,4 +1,5 @@
 # A simple Url primitive
+[![CI](https://github.com/rmja/nourl/actions/workflows/ci.yaml/badge.svg)](https://github.com/rmja/nourl/actions/workflows/ci.yaml)
 [![crates.io](https://img.shields.io/crates/v/nourl.svg)](https://crates.io/crates/nourl)
 
 This crate provides a simple `Url` type that can be used in embedded `no_std` environments.

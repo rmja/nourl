@@ -1,14 +1,51 @@
 #![no_std]
 mod error;
+#[cfg(feature = "defmt")]
+mod defmt_impl;
 
 pub use error::Error;
 
 /// A parsed URL to extract different parts of the URL.
 pub struct Url<'a> {
-    host: &'a str,
     scheme: UrlScheme,
+    host: &'a str,
     port: Option<u16>,
     path: &'a str,
+}
+
+impl core::fmt::Debug for Url<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        if let Some(port) = self.port {
+            write!(
+                f,
+                "{}://{}:{}{}",
+                self.scheme.as_str(),
+                self.host,
+                port,
+                self.path
+            )
+        } else {
+            write!(f, "{}://{}{}", self.scheme.as_str(), self.host, self.path)
+        }
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for Url<'_> {
+    fn format(&self, fmt: defmt::Formatter) {
+        if let Some(port) = self.port {
+            defmt::write!(
+                fmt,
+                "{}://{}:{}{}",
+                self.scheme.as_str(),
+                self.host,
+                port,
+                self.path
+            )
+        } else {
+            defmt::write!(fmt, "{}://{}{}", self.scheme.as_str(), self.host, self.path)
+        }
+    }
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -26,7 +63,7 @@ pub enum UrlScheme {
 
 impl UrlScheme {
     /// str representation of the scheme
-    /// 
+    ///
     /// The returned str is always lowercase
     pub fn as_str(&self) -> &str {
         match self {
@@ -126,6 +163,7 @@ impl<'a> Url<'a> {
 #[cfg(test)]
 mod tests {
     extern crate std;
+
     use super::*;
 
     #[test]
@@ -158,6 +196,8 @@ mod tests {
         assert_eq!(url.host(), "localhost");
         assert_eq!(url.port_or_default(), 80);
         assert_eq!(url.path(), "/");
+
+        assert_eq!("http://localhost/", std::format!("{:?}", url));
     }
 
     #[test]
@@ -167,6 +207,8 @@ mod tests {
         assert_eq!(url.host(), "localhost");
         assert_eq!(url.port_or_default(), 80);
         assert_eq!(url.path(), "/foo/bar");
+
+        assert_eq!("http://localhost/foo/bar", std::format!("{:?}", url));
     }
 
     #[test]
@@ -176,6 +218,8 @@ mod tests {
         assert_eq!(url.host(), "localhost");
         assert_eq!(url.port().unwrap(), 8088);
         assert_eq!(url.path(), "/");
+
+        assert_eq!("http://localhost:8088/", std::format!("{:?}", url));
     }
 
     #[test]
@@ -185,6 +229,8 @@ mod tests {
         assert_eq!(url.host(), "localhost");
         assert_eq!(url.port().unwrap(), 8088);
         assert_eq!(url.path(), "/foo/bar");
+
+        assert_eq!("http://localhost:8088/foo/bar", std::format!("{:?}", url));
     }
 
     #[test]
@@ -194,5 +240,7 @@ mod tests {
         assert_eq!(url.host(), "localhost");
         assert_eq!(url.port_or_default(), 443);
         assert_eq!(url.path(), "/");
+
+        assert_eq!("https://localhost/", std::format!("{:?}", url));
     }
 }

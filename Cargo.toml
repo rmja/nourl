@@ -2,6 +2,8 @@
 name = "nourl"
 version = "0.1.0"
 edition = "2021"
+description = "A simple Url primitive for no_std environments"
+readme = "README.md"
 repository = "https://github.com/rmja/nourl"
 authors = ["Rasmus Melchior Jacobsen <rmja@laesoe.org>"]
 license = "Apache-2.0 or MIT"

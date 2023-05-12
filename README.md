@@ -17,4 +17,4 @@ assert_eq!(url.port_or_default(), 80);
 assert_eq!(url.path(), "/foo/bar");
 ```
 
-The implementation is heavily inspired (close to copy/pase) from the Url type in [reqwless](https://github.com/drogue-iot/reqwless).
+The implementation is heavily inspired (close to copy/paste) from the Url type in [reqwless](https://github.com/drogue-iot/reqwless).

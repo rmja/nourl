@@ -87,6 +87,7 @@ impl UrlScheme {
 
 impl<'a> Url<'a> {
     /// Parse the provided url
+    #[cfg(not(feature = "url-lite-backend"))]
     pub fn parse(url: &'a str) -> Result<Url<'a>, Error> {
         let mut parts = url.split("://");
         let scheme = parts.next().unwrap();
@@ -134,6 +135,45 @@ impl<'a> Url<'a> {
         })
     }
 
+    /// Parse the provided url
+    #[cfg(feature = "url-lite-backend")]
+    pub fn parse(url: &'a str) -> Result<Url<'a>, Error> {
+        let url = url_lite::Url::parse(url).map_err(|err| match err {
+            url_lite::ParseError::EmptyInput => Error::NoScheme,
+            url_lite::ParseError::InvalidConnect
+            | url_lite::ParseError::Whitespace
+            | url_lite::ParseError::NoHost
+            | url_lite::ParseError::Invalid => Error::InvalidUrl,
+        })?;
+
+        let scheme_str = url.schema.ok_or(Error::NoScheme)?;
+
+        let scheme = if scheme_str.eq_ignore_ascii_case("http") {
+            UrlScheme::HTTP
+        } else if scheme_str.eq_ignore_ascii_case("https") {
+            UrlScheme::HTTPS
+        } else if scheme_str.eq_ignore_ascii_case("mqtt") {
+            UrlScheme::MQTT
+        } else if scheme_str.eq_ignore_ascii_case("mqtts") {
+            UrlScheme::MQTTS
+        } else {
+            return Err(Error::InvalidUrl);
+        };
+
+        let port = if let Some(port) = url.port {
+            Some(port.parse::<u16>().map_err(|_| Error::InvalidUrl)?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            scheme,
+            host: url.host.unwrap_or_default(),
+            port,
+            path: url.path.unwrap_or("/"),
+        })
+    }
+
     /// Get the url scheme
     pub fn scheme(&self) -> UrlScheme {
         self.scheme
@@ -167,12 +207,14 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "url-lite-backend"))]
     fn test_parse_no_scheme() {
         assert_eq!(Error::NoScheme, Url::parse("").err().unwrap());
         assert_eq!(Error::NoScheme, Url::parse("http:/").err().unwrap());
     }
 
     #[test]
+    #[cfg(not(feature = "url-lite-backend"))]
     fn test_parse_unsupported_scheme() {
         assert_eq!(
             Error::UnsupportedScheme,
@@ -181,6 +223,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "url-lite-backend"))]
     fn test_parse_no_host() {
         let url = Url::parse("http://").unwrap();
         assert_eq!(url.scheme(), UrlScheme::HTTP);

@@ -5,4 +5,6 @@ pub enum Error {
     NoScheme,
     /// The sceme in the url is not known
     UnsupportedScheme,
+    /// The url is invalid
+    InvalidUrl,
 }

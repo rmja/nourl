@@ -100,30 +100,28 @@ impl<'a> Url<'a> {
             Err(Error::UnsupportedScheme)
         }?;
 
-        let (host, port, path) = if let Some(port_delim) = host_port_path.find(':') {
-            // Port is defined
-            let host = &host_port_path[..port_delim];
-            let rest = &host_port_path[port_delim..];
-
-            let (port, path) = if let Some(path_delim) = rest.find('/') {
-                let port = rest[1..path_delim].parse::<u16>().ok();
-                let path = &rest[path_delim..];
-                let path = if path.is_empty() { "/" } else { path };
-                (port, path)
-            } else {
-                let port = rest[1..].parse::<u16>().ok();
-                (port, "/")
-            };
-            (host, port, path)
+        // Split host and path first
+        let (host_port, path) = if let Some(path_delim) = host_port_path.find('/') {
+            let host_port = &host_port_path[..path_delim];
+            let path = &host_port_path[path_delim..];
+            let path = if path.is_empty() { "/" } else { path };
+            (host_port, path)
         } else {
-            let (host, path) = if let Some(needle) = host_port_path.find('/') {
-                let host = &host_port_path[..needle];
-                let path = &host_port_path[needle..];
-                (host, if path.is_empty() { "/" } else { path })
-            } else {
-                (host_port_path, "/")
-            };
-            (host, None, path)
+            (host_port_path, "/")
+        };
+
+        // Now handle the port
+        let (host, port) = if let Some(port_delim) = host_port.find(':') {
+            let host = &host_port[..port_delim];
+            let port = Some(
+                host_port[port_delim + 1..]
+                    .parse::<u16>()
+                    .ok()
+                    .unwrap_or_else(|| scheme.default_port()),
+            );
+            (host, port)
+        } else {
+            (host_port, None)
         };
 
         Ok(Self {

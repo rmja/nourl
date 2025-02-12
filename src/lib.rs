@@ -210,6 +210,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_path_with_colon() {
+        let url = Url::parse("http://localhost/foo/bar:123").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::HTTP);
+        assert_eq!(url.host(), "localhost");
+        assert_eq!(url.port_or_default(), 80);
+        assert_eq!(url.path(), "/foo/bar:123");
+
+        assert_eq!("http://localhost/foo/bar:123", std::format!("{:?}", url));
+    }
+
+    #[test]
     fn test_parse_port() {
         let url = Url::parse("http://localhost:8088").unwrap();
         assert_eq!(url.scheme(), UrlScheme::HTTP);

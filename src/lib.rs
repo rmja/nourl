@@ -3,30 +3,35 @@
 mod defmt_impl;
 mod error;
 
+use core::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    str::FromStr,
+};
+
 pub use error::Error;
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A parsed URL to extract different parts of the URL.
 pub struct Url<'a> {
     scheme: UrlScheme,
     host: &'a str,
+    is_host_ipv6: bool,
     port: Option<u16>,
     path: &'a str,
 }
 
 impl core::fmt::Debug for Url<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if let Some(port) = self.port {
-            write!(
-                f,
-                "{}://{}:{}{}",
-                self.scheme.as_str(),
-                self.host,
-                port,
-                self.path
-            )
+        write!(f, "{}://", self.scheme.as_str())?;
+        if self.is_host_ipv6 {
+            write!(f, "[{}]", self.host)?;
         } else {
-            write!(f, "{}://{}{}", self.scheme.as_str(), self.host, self.path)
+            write!(f, "{}", self.host)?;
         }
+        if let Some(port) = self.port {
+            write!(f, ":{}", port)?
+        }
+        write!(f, "{}", self.path)
     }
 }
 
@@ -48,7 +53,7 @@ impl defmt::Format for Url<'_> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UrlScheme {
     /// HTTP scheme
@@ -88,7 +93,9 @@ impl UrlScheme {
 impl<'a> Url<'a> {
     /// Parse the provided url
     pub fn parse(url: &'a str) -> Result<Url<'a>, Error> {
+        // Split out the scheme.
         let mut parts = url.split("://");
+        // This can't fail, since `Split` always yields `Some` on the first iteration.
         let scheme = parts.next().unwrap();
         let host_port_path = parts.next().ok_or(Error::NoScheme)?;
 
@@ -111,22 +118,46 @@ impl<'a> Url<'a> {
         };
 
         // Now handle the port
-        let (host, port) = if let Some(port_delim) = host_port.find(':') {
-            let host = &host_port[..port_delim];
-            let port = Some(
-                host_port[port_delim + 1..]
-                    .parse::<u16>()
-                    .ok()
-                    .unwrap_or_else(|| scheme.default_port()),
-            );
-            (host, port)
+        let (host, port, is_host_ipv6) = if host_port.starts_with('[') {
+            // If we are here, a '[' was found, indicating that the host is an IPv6 address. If
+            // there is no closing ']' we return Ipv6AddressInvalid here.
+            let ipv6_addr_end = host_port.find(']').ok_or(Error::Ipv6AddressInvalid)?;
+            // Check if there's a port following the IPv6 address.
+            let port = if let Some(port) = host_port
+                .get(ipv6_addr_end + 1..)
+                .filter(|port| !port.is_empty())
+            {
+                Some(
+                    port.strip_prefix(':')
+                        .ok_or(Error::LeftoverTokensAfterIpv6)?,
+                )
+            } else {
+                None
+            };
+            (&host_port[1..ipv6_addr_end], port, true)
+        } else if let Some(port_delim) = host_port.find(':') {
+            // The hostname is followed by a port, which we attempt to extract here.
+            (
+                &host_port[..port_delim],
+                host_port.get(port_delim + 1..),
+                false,
+            )
         } else {
-            (host_port, None)
+            // No port follows the hostname.
+            (host_port, None, false)
         };
+        if port == Some("") {
+            return Err(Error::NoPortAfterColon);
+        }
+        let port = port
+            .map(|port| port.parse::<u16>())
+            .transpose()
+            .map_err(|_| Error::InvalidPort)?;
 
         Ok(Self {
             scheme,
             host,
+            is_host_ipv6,
             path,
             port,
         })
@@ -140,6 +171,17 @@ impl<'a> Url<'a> {
     /// Get the url host
     pub fn host(&self) -> &'a str {
         self.host
+    }
+
+    /// Attempt to get the url host as an IP address
+    ///
+    /// This will only work, if the url host was actually specified as an IP address.
+    pub fn host_ip(&self) -> Option<IpAddr> {
+        if self.is_host_ipv6 {
+            Ipv6Addr::from_str(self.host).ok().map(|ip| ip.into())
+        } else {
+            Ipv4Addr::from_str(self.host).ok().map(|ip| ip.into())
+        }
     }
 
     /// Get the url port if specified
@@ -251,5 +293,74 @@ mod tests {
         assert_eq!(url.path(), "/");
 
         assert_eq!("https://localhost/", std::format!("{:?}", url));
+    }
+    #[test]
+    fn test_parse_ipv4() {
+        let url = Url::parse("https://127.0.0.1:1337/foo/bar").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::HTTPS);
+        assert_eq!(url.host(), "127.0.0.1");
+        assert_eq!(
+            url.host_ip().unwrap(),
+            IpAddr::from_str("127.0.0.1").unwrap()
+        );
+        assert_eq!(url.port_or_default(), 1337);
+        assert_eq!(url.path(), "/foo/bar");
+
+        assert_eq!("https://127.0.0.1:1337/foo/bar", std::format!("{:?}", url));
+    }
+    #[test]
+    fn test_parse_ipv6() {
+        let url = Url::parse("https://[fe80::]/foo/bar").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::HTTPS);
+        assert_eq!(url.host(), "fe80::");
+        assert_eq!(url.host_ip().unwrap(), IpAddr::from_str("fe80::").unwrap());
+        assert_eq!(url.port_or_default(), 443);
+        assert_eq!(url.path(), "/foo/bar");
+
+        assert_eq!("https://[fe80::]/foo/bar", std::format!("{:?}", url));
+    }
+    #[test]
+    fn test_parse_ipv6_port() {
+        let url = Url::parse("https://[fe80::]:1337/foo/bar").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::HTTPS);
+        assert_eq!(url.host(), "fe80::");
+        assert_eq!(url.host_ip().unwrap(), IpAddr::from_str("fe80::").unwrap());
+        assert_eq!(url.port_or_default(), 1337);
+        assert_eq!(url.path(), "/foo/bar");
+
+        assert_eq!("https://[fe80::]:1337/foo/bar", std::format!("{:?}", url));
+    }
+    #[test]
+    fn test_invalid_ipv6() {
+        assert_eq!(
+            Url::parse("http://[fe80::/"),
+            Err(Error::Ipv6AddressInvalid)
+        );
+    }
+    #[test]
+    fn test_leftover_tokens_ipv6() {
+        assert_eq!(
+            Url::parse("http://[fe80]a/"),
+            Err(Error::LeftoverTokensAfterIpv6)
+        );
+    }
+    #[test]
+    fn test_no_port_after_colon() {
+        assert_eq!(
+            Url::parse("http://localhost:/"),
+            Err(Error::NoPortAfterColon)
+        );
+        assert_eq!(
+            Url::parse("http://[fe80::]:/"),
+            Err(Error::NoPortAfterColon)
+        );
+    }
+    #[test]
+    fn test_invalid_port() {
+        assert_eq!(
+            Url::parse("http://localhost:12E4/"),
+            Err(Error::InvalidPort)
+        );
+        assert_eq!(Url::parse("http://[fe80::]:12E4/"), Err(Error::InvalidPort));
     }
 }

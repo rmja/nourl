@@ -3,9 +3,9 @@
 pub enum Error {
     /// The url did not start with <scheme>://
     NoScheme,
-    /// The sceme in the url is not known
+    /// The sceme in the url is not known.
     UnsupportedScheme,
-    /// The IPv6 address is invalid.
+    /// There was no closing square bracket after the IPv6 address.
     Ipv6AddressInvalid,
     /// There were tokens between the closing bracket of an IPv6 address and the next slash, that
     /// weren't a colon.

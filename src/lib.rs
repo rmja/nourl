@@ -91,6 +91,8 @@ impl UrlScheme {
 
 impl<'a> Url<'a> {
     /// Parse the provided url
+    ///
+    /// The host may be an IP address. An IPv6 address has to be surrounded by square brackets.
     pub fn parse(url: &'a str) -> Result<Url<'a>, Error> {
         // Split out the scheme.
         let mut parts = url.split("://");

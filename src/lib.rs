@@ -37,19 +37,18 @@ impl core::fmt::Debug for Url<'_> {
 
 #[cfg(feature = "defmt")]
 impl defmt::Format for Url<'_> {
-    fn format(&self, fmt: defmt::Formatter) {
-        if let Some(port) = self.port {
-            defmt::write!(
-                fmt,
-                "{}://{}:{}{}",
-                self.scheme.as_str(),
-                self.host,
-                port,
-                self.path
-            )
+    fn format(&self, f: defmt::Formatter) {
+        use defmt::write;
+        write!(f, "{}://", self.scheme.as_str());
+        if self.is_host_ipv6 {
+            write!(f, "[{}]", self.host);
         } else {
-            defmt::write!(fmt, "{}://{}{}", self.scheme.as_str(), self.host, self.path)
+            write!(f, "{}", self.host);
         }
+        if let Some(port) = self.port {
+            write!(f, ":{}", port)
+        }
+        write!(f, "{}", self.path)
     }
 }
 

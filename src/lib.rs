@@ -3,12 +3,12 @@
 mod defmt_impl;
 mod error;
 
+use crate::error::Error;
+
 use core::{
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
     str::FromStr,
 };
-
-pub use error::Error;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A parsed URL to extract different parts of the URL.
@@ -16,6 +16,7 @@ pub struct Url<'a> {
     scheme: UrlScheme,
     host: &'a str,
     is_host_ipv6: bool,
+    scope_id: Option<u32>,
     port: Option<u16>,
     path: &'a str,
 }
@@ -24,7 +25,11 @@ impl core::fmt::Debug for Url<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}://", self.scheme.as_str())?;
         if self.is_host_ipv6 {
-            write!(f, "[{}]", self.host)?;
+            write!(f, "[{}", self.host)?;
+            if let Some(scope_id) = self.scope_id {
+                write!(f, "%{}", scope_id)?;
+            }
+            write!(f, "]")?;
         } else {
             write!(f, "{}", self.host)?;
         }
@@ -41,7 +46,11 @@ impl defmt::Format for Url<'_> {
         use defmt::write;
         write!(f, "{}://", self.scheme.as_str());
         if self.is_host_ipv6 {
-            write!(f, "[{}]", self.host);
+            write!(f, "[{}", self.host)?;
+            if let Some(scope_id) = self.scope_id {
+                write!(f, "%{}", scope_id)?;
+            }
+            write!(f, "]")?;
         } else {
             write!(f, "{}", self.host);
         }
@@ -118,14 +127,25 @@ impl<'a> Url<'a> {
             (host_port_path, "/")
         };
 
-        // Now handle the port
-        let (host, port, is_host_ipv6) = if host_port.starts_with('[') {
+        // Now handle the host, port and scope ID.
+        let (host, port, is_host_ipv6, scope_id) = if host_port.starts_with('[') {
             // If we are here, a '[' was found, indicating that the host is an IPv6 address. If
             // there is no closing ']' we return Ipv6AddressInvalid here.
-            let ipv6_addr_end = host_port.find(']').ok_or(Error::Ipv6AddressInvalid)?;
+            let address_block_end = host_port.find(']').ok_or(Error::Ipv6AddressInvalid)?;
+            // The range in which the actual address is located.
+            let mut address_range = 1..address_block_end;
+            // Check if there's a scoped id and parse it if it's present. The address_range will
+            // also be altered, to only contain the address.
+            let scope_id = if let Some(scope_id_start) = host_port[address_range.clone()].find('%')
+            {
+                address_range = 1..scope_id_start + 1;
+                Some(&host_port[scope_id_start + 2..address_block_end])
+            } else {
+                None
+            };
             // Check if there's a port following the IPv6 address.
             let port = if let Some(port) = host_port
-                .get(ipv6_addr_end + 1..)
+                .get(address_block_end + 1..)
                 .filter(|port| !port.is_empty())
             {
                 Some(
@@ -135,29 +155,38 @@ impl<'a> Url<'a> {
             } else {
                 None
             };
-            (&host_port[1..ipv6_addr_end], port, true)
+            (&host_port[address_range], port, true, scope_id)
         } else if let Some(port_delim) = host_port.find(':') {
             // The hostname is followed by a port, which we attempt to extract here.
             (
                 &host_port[..port_delim],
                 host_port.get(port_delim + 1..),
                 false,
+                None,
             )
         } else {
             // No port follows the hostname.
-            (host_port, None, false)
+            (host_port, None, false, None)
         };
         if port == Some("") {
             return Err(Error::NoPortAfterColon);
+        }
+        if scope_id == Some("") {
+            return Err(Error::NoScopeIdAfterPercent);
         }
         let port = port
             .map(|port| port.parse::<u16>())
             .transpose()
             .map_err(|_| Error::InvalidPort)?;
+        let scope_id = scope_id
+            .map(|scope_id| scope_id.parse::<u32>())
+            .transpose()
+            .map_err(|_| Error::InvalidScopeId)?;
 
         Ok(Self {
             scheme,
             host,
+            scope_id,
             is_host_ipv6,
             path,
             port,
@@ -185,6 +214,23 @@ impl<'a> Url<'a> {
         }
     }
 
+    /// Attempt to get the url host socket address
+    ///
+    /// This will only work, if the url host was an IP address
+    pub fn host_socket_address(&self) -> Option<SocketAddr> {
+        Some(match self.host_ip()? {
+            IpAddr::V4(address) => {
+                SocketAddr::V4(SocketAddrV4::new(address, self.port_or_default()))
+            }
+            IpAddr::V6(address) => SocketAddr::V6(SocketAddrV6::new(
+                address,
+                self.port_or_default(),
+                0,
+                self.scope_id_or_default(),
+            )),
+        })
+    }
+
     /// Get the url port if specified
     pub fn port(&self) -> Option<u16> {
         self.port
@@ -193,6 +239,16 @@ impl<'a> Url<'a> {
     /// Get the url port or the default port for the scheme
     pub fn port_or_default(&self) -> u16 {
         self.port.unwrap_or_else(|| self.scheme.default_port())
+    }
+
+    /// Get the scope ID of the IPv6 address specified in the url
+    pub fn scope_id(&self) -> Option<u32> {
+        self.scope_id
+    }
+
+    /// Get the scope ID of the IPv6 address specified in the url or the default scope ID
+    pub fn scope_id_or_default(&self) -> u32 {
+        self.scope_id.unwrap_or(0)
     }
 
     /// Get the url path
@@ -301,8 +357,8 @@ mod tests {
         assert_eq!(url.scheme(), UrlScheme::HTTPS);
         assert_eq!(url.host(), "127.0.0.1");
         assert_eq!(
-            url.host_ip().unwrap(),
-            IpAddr::from_str("127.0.0.1").unwrap()
+            url.host_socket_address().unwrap(),
+            SocketAddr::from_str("127.0.0.1:1337").unwrap()
         );
         assert_eq!(url.port_or_default(), 1337);
         assert_eq!(url.path(), "/foo/bar");
@@ -311,25 +367,31 @@ mod tests {
     }
     #[test]
     fn test_parse_ipv6() {
-        let url = Url::parse("https://[fe80::]/foo/bar").unwrap();
+        let url = Url::parse("https://[fe80::%1]/foo/bar").unwrap();
         assert_eq!(url.scheme(), UrlScheme::HTTPS);
         assert_eq!(url.host(), "fe80::");
-        assert_eq!(url.host_ip().unwrap(), IpAddr::from_str("fe80::").unwrap());
+        assert_eq!(
+            url.host_socket_address().unwrap(),
+            SocketAddr::from_str("[fe80::%1]:443").unwrap()
+        );
         assert_eq!(url.port_or_default(), 443);
         assert_eq!(url.path(), "/foo/bar");
 
-        assert_eq!("https://[fe80::]/foo/bar", std::format!("{:?}", url));
+        assert_eq!("https://[fe80::%1]/foo/bar", std::format!("{:?}", url));
     }
     #[test]
     fn test_parse_ipv6_port() {
-        let url = Url::parse("https://[fe80::]:1337/foo/bar").unwrap();
+        let url = Url::parse("https://[fe80::%1]:1337/foo/bar").unwrap();
         assert_eq!(url.scheme(), UrlScheme::HTTPS);
         assert_eq!(url.host(), "fe80::");
-        assert_eq!(url.host_ip().unwrap(), IpAddr::from_str("fe80::").unwrap());
+        assert_eq!(
+            url.host_socket_address().unwrap(),
+            SocketAddr::from_str("[fe80::%1]:1337").unwrap()
+        );
         assert_eq!(url.port_or_default(), 1337);
         assert_eq!(url.path(), "/foo/bar");
 
-        assert_eq!("https://[fe80::]:1337/foo/bar", std::format!("{:?}", url));
+        assert_eq!("https://[fe80::%1]:1337/foo/bar", std::format!("{:?}", url));
     }
     #[test]
     fn test_invalid_ipv6() {

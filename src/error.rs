@@ -14,4 +14,8 @@ pub enum Error {
     NoPortAfterColon,
     /// The specified port was either out of range or contained invalid tokens.
     InvalidPort,
+    /// A percent was present, but no scope ID following it.
+    NoScopeIdAfterPercent,
+    /// The specified scope ID was either out of range or contained invalid tokens.
+    InvalidScopeId,
 }

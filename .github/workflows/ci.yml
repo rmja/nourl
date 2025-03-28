@@ -26,3 +26,5 @@ jobs:
       run: cargo clippy --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Run tests with defmt
+      run: cargo test --verbose --features defmt

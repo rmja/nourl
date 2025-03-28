@@ -46,11 +46,11 @@ impl defmt::Format for Url<'_> {
         use defmt::write;
         write!(f, "{}://", self.scheme.as_str());
         if self.is_host_ipv6 {
-            write!(f, "[{}", self.host)?;
+            write!(f, "[{}", self.host);
             if let Some(scope_id) = self.scope_id {
-                write!(f, "%{}", scope_id)?;
+                write!(f, "%{}", scope_id);
             }
-            write!(f, "]")?;
+            write!(f, "]");
         } else {
             write!(f, "{}", self.host);
         }

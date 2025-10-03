@@ -19,6 +19,7 @@ pub struct Url<'a> {
     scope_id: Option<u32>,
     port: Option<u16>,
     path: &'a str,
+    query: Option<&'a str>,
 }
 
 impl core::fmt::Debug for Url<'_> {
@@ -34,9 +35,13 @@ impl core::fmt::Debug for Url<'_> {
             write!(f, "{}", self.host)?;
         }
         if let Some(port) = self.port {
-            write!(f, ":{}", port)?
+            write!(f, ":{}", port)?;
         }
-        write!(f, "{}", self.path)
+        if let Some(query) = self.query {
+            write!(f, "{}?{}", self.path, query)
+        } else {
+            write!(f, "{}", self.path)
+        }
     }
 }
 
@@ -57,7 +62,11 @@ impl defmt::Format for Url<'_> {
         if let Some(port) = self.port {
             write!(f, ":{}", port)
         }
-        write!(f, "{}", self.path)
+        if let Some(query) = self.query {
+            write!(f, "{}?{}", self.path, query)
+        } else {
+            write!(f, "{}", self.path)
+        }
     }
 }
 
@@ -113,18 +122,33 @@ impl<'a> Url<'a> {
             Ok(UrlScheme::HTTP)
         } else if scheme.eq_ignore_ascii_case("https") {
             Ok(UrlScheme::HTTPS)
+        } else if scheme.eq_ignore_ascii_case("mqtt") {
+            Ok(UrlScheme::MQTT)
+        } else if scheme.eq_ignore_ascii_case("mqtts") {
+            Ok(UrlScheme::MQTTS)
         } else {
             Err(Error::UnsupportedScheme)
         }?;
 
         // Split host and path first
-        let (host_port, path) = if let Some(path_delim) = host_port_path.find('/') {
+        let (host_port, path, query) = if let Some(path_delim) = host_port_path.find('/') {
             let host_port = &host_port_path[..path_delim];
             let path = &host_port_path[path_delim..];
             let path = if path.is_empty() { "/" } else { path };
-            (host_port, path)
+
+            // Split out the query if present
+            // The query is everything after the first '?'
+            let (path, query) = if let Some(query_delim) = path.find('?') {
+                let query = &path[query_delim + 1..];
+                let path = &path[..query_delim];
+                (path, Some(query))
+            } else {
+                (path, None)
+            };
+
+            (host_port, path, query)
         } else {
-            (host_port_path, "/")
+            (host_port_path, "/", None)
         };
 
         // Now handle the host, port and scope ID.
@@ -190,6 +214,7 @@ impl<'a> Url<'a> {
             is_host_ipv6,
             path,
             port,
+            query,
         })
     }
 
@@ -255,6 +280,11 @@ impl<'a> Url<'a> {
     pub fn path(&self) -> &'a str {
         self.path
     }
+
+    /// Get the url query if specified
+    pub fn query(&self) -> Option<&'a str> {
+        self.query
+    }
 }
 
 #[cfg(test)]
@@ -284,6 +314,14 @@ mod tests {
         assert_eq!(url.host(), "");
         assert_eq!(url.port_or_default(), 80);
         assert_eq!(url.path(), "/");
+        assert_eq!(url.query(), None);
+
+        let url = Url::parse("mqtt://").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::MQTT);
+        assert_eq!(url.host(), "");
+        assert_eq!(url.port_or_default(), 1883);
+        assert_eq!(url.path(), "/");
+        assert_eq!(url.query(), None);
     }
 
     #[test]
@@ -320,6 +358,21 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_path_query() {
+        let url = Url::parse("mqtt://localhost/foo/bar?foo=bar&hello=world").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::MQTT);
+        assert_eq!(url.host(), "localhost");
+        assert_eq!(url.port_or_default(), 1883);
+        assert_eq!(url.path(), "/foo/bar");
+        assert_eq!(url.query(), Some("foo=bar&hello=world"));
+
+        assert_eq!(
+            "mqtt://localhost/foo/bar?foo=bar&hello=world",
+            std::format!("{:?}", url)
+        );
+    }
+
+    #[test]
     fn test_parse_port() {
         let url = Url::parse("http://localhost:8088").unwrap();
         assert_eq!(url.scheme(), UrlScheme::HTTP);
@@ -351,6 +404,7 @@ mod tests {
 
         assert_eq!("https://localhost/", std::format!("{:?}", url));
     }
+
     #[test]
     fn test_parse_ipv4() {
         let url = Url::parse("https://127.0.0.1:1337/foo/bar").unwrap();
@@ -365,6 +419,7 @@ mod tests {
 
         assert_eq!("https://127.0.0.1:1337/foo/bar", std::format!("{:?}", url));
     }
+
     #[test]
     fn test_parse_ipv6() {
         let url = Url::parse("https://[fe80::%1]/foo/bar").unwrap();
@@ -379,6 +434,7 @@ mod tests {
 
         assert_eq!("https://[fe80::%1]/foo/bar", std::format!("{:?}", url));
     }
+
     #[test]
     fn test_parse_ipv6_port() {
         let url = Url::parse("https://[fe80::%1]:1337/foo/bar").unwrap();
@@ -393,6 +449,7 @@ mod tests {
 
         assert_eq!("https://[fe80::%1]:1337/foo/bar", std::format!("{:?}", url));
     }
+
     #[test]
     fn test_invalid_ipv6() {
         assert_eq!(
@@ -400,6 +457,7 @@ mod tests {
             Err(Error::Ipv6AddressInvalid)
         );
     }
+
     #[test]
     fn test_leftover_tokens_ipv6() {
         assert_eq!(
@@ -407,6 +465,7 @@ mod tests {
             Err(Error::LeftoverTokensAfterIpv6)
         );
     }
+
     #[test]
     fn test_no_port_after_colon() {
         assert_eq!(
@@ -418,6 +477,7 @@ mod tests {
             Err(Error::NoPortAfterColon)
         );
     }
+
     #[test]
     fn test_invalid_port() {
         assert_eq!(

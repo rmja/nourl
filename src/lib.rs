@@ -103,11 +103,8 @@ impl<'a> Url<'a> {
     ///
     /// The host may be an IP address. An IPv6 address has to be surrounded by square brackets.
     pub fn parse(url: &'a str) -> Result<Url<'a>, Error> {
-        // Split out the scheme.
-        let mut parts = url.split("://");
-        // This can't fail, since `Split` always yields `Some` on the first iteration.
-        let scheme = parts.next().unwrap();
-        let host_port_path = parts.next().ok_or(Error::NoScheme)?;
+        // Split out the scheme at the first occurrence only, so subsequent "://" remain in path.
+        let (scheme, host_port_path) = url.split_once("://").ok_or(Error::NoScheme)?;
 
         let scheme = if scheme.eq_ignore_ascii_case("http") {
             Ok(UrlScheme::HTTP)
@@ -425,5 +422,34 @@ mod tests {
             Err(Error::InvalidPort)
         );
         assert_eq!(Url::parse("http://[fe80::]:12E4/"), Err(Error::InvalidPort));
+    }
+
+    #[test]
+    fn test_parse_path_containing_scheme_delimiter() {
+        let url =
+            Url::parse("https://web.archive.org/web/19980207005953if_/http://backrub.stanford.edu/")
+                .unwrap();
+        assert_eq!(url.scheme(), UrlScheme::HTTPS);
+        assert_eq!(url.host(), "web.archive.org");
+        assert_eq!(url.port_or_default(), 443);
+        assert_eq!(
+            url.path(),
+            "/web/19980207005953if_/http://backrub.stanford.edu/"
+        );
+
+        assert_eq!(
+            "https://web.archive.org/web/19980207005953if_/http://backrub.stanford.edu/",
+            std::format!("{:?}", url)
+        );
+    }
+
+    #[test]
+    fn test_parse_path_only_scheme_delimiter_fragment() {
+        let url = Url::parse("https://example.com/http://foo").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::HTTPS);
+        assert_eq!(url.host(), "example.com");
+        assert_eq!(url.path(), "/http://foo");
+
+        assert_eq!("https://example.com/http://foo", std::format!("{:?}", url));
     }
 }

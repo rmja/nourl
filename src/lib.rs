@@ -63,6 +63,7 @@ impl defmt::Format for Url<'_> {
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum UrlScheme {
     /// HTTP scheme
     HTTP,

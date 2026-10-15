@@ -63,7 +63,12 @@ impl defmt::Format for Url<'_> {
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum UrlScheme {
+    /// CoAP scheme
+    CoAP,
+    /// CoAPS scheme
+    CoAPS,
     /// HTTP scheme
     HTTP,
     /// HTTPS (HTTP + TLS) scheme
@@ -80,6 +85,8 @@ impl UrlScheme {
     /// The returned str is always lowercase
     pub fn as_str(&self) -> &str {
         match self {
+            UrlScheme::CoAP => "coap",
+            UrlScheme::CoAPS => "coaps",
             UrlScheme::HTTP => "http",
             UrlScheme::HTTPS => "https",
             UrlScheme::MQTT => "mqtt",
@@ -90,6 +97,10 @@ impl UrlScheme {
     /// Get the default port for scheme
     pub const fn default_port(&self) -> u16 {
         match self {
+            // See <https://datatracker.ietf.org/doc/html/rfc7252#section-6.1>.
+            UrlScheme::CoAP => 5683,
+            // See <https://datatracker.ietf.org/doc/html/rfc7252#section-6.2>.
+            UrlScheme::CoAPS => 5684,
             UrlScheme::HTTP => 80,
             UrlScheme::HTTPS => 443,
             UrlScheme::MQTT => 1883,
@@ -106,10 +117,18 @@ impl<'a> Url<'a> {
         // Split out the scheme at the first occurrence only, so subsequent "://" remain in path.
         let (scheme, host_port_path) = url.split_once("://").ok_or(Error::NoScheme)?;
 
-        let scheme = if scheme.eq_ignore_ascii_case("http") {
+        let scheme = if scheme.eq_ignore_ascii_case("coap") {
+            Ok(UrlScheme::CoAP)
+        } else if scheme.eq_ignore_ascii_case("coaps") {
+            Ok(UrlScheme::CoAPS)
+        } else if scheme.eq_ignore_ascii_case("http") {
             Ok(UrlScheme::HTTP)
         } else if scheme.eq_ignore_ascii_case("https") {
             Ok(UrlScheme::HTTPS)
+        } else if scheme.eq_ignore_ascii_case("mqtt") {
+            Ok(UrlScheme::MQTT)
+        } else if scheme.eq_ignore_ascii_case("mqtts") {
+            Ok(UrlScheme::MQTTS)
         } else {
             Err(Error::UnsupportedScheme)
         }?;
@@ -347,6 +366,18 @@ mod tests {
         assert_eq!(url.path(), "/");
 
         assert_eq!("https://localhost/", std::format!("{:?}", url));
+
+        let url = Url::parse("coap://localhost/").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::CoAP);
+
+        let url = Url::parse("coaps://localhost/").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::CoAPS);
+
+        let url = Url::parse("mqtt://localhost/").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::MQTT);
+
+        let url = Url::parse("mqtts://localhost/").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::MQTTS);
     }
     #[test]
     fn test_parse_ipv4() {

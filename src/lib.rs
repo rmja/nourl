@@ -125,6 +125,10 @@ impl<'a> Url<'a> {
             Ok(UrlScheme::HTTP)
         } else if scheme.eq_ignore_ascii_case("https") {
             Ok(UrlScheme::HTTPS)
+        } else if scheme.eq_ignore_ascii_case("mqtt") {
+            Ok(UrlScheme::MQTT)
+        } else if scheme.eq_ignore_ascii_case("mqtts") {
+            Ok(UrlScheme::MQTTS)
         } else {
             Err(Error::UnsupportedScheme)
         }?;
@@ -368,6 +372,12 @@ mod tests {
 
         let url = Url::parse("coaps://localhost/").unwrap();
         assert_eq!(url.scheme(), UrlScheme::CoAPS);
+
+        let url = Url::parse("mqtt://localhost/").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::MQTT);
+
+        let url = Url::parse("mqtts://localhost/").unwrap();
+        assert_eq!(url.scheme(), UrlScheme::MQTTS);
     }
     #[test]
     fn test_parse_ipv4() {
